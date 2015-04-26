@@ -21,7 +21,7 @@
 #
 # @api public
 class Poseidon::ConsumerGroup
-  DEFAULT_CLAIM_TIMEOUT = 5
+  DEFAULT_CLAIM_TIMEOUT = 30
   DEFAULT_LOOP_DELAY = 1
 
   # Poseidon::ConsumerGroup::Consumer is internally used by Poseidon::ConsumerGroup.
@@ -166,7 +166,7 @@ class Poseidon::ConsumerGroup
   # Closes the consumer group gracefully, only really useful in tests
   # @api private
   def close
-    @mutex.synchronize { release_all! }
+    synchronize { release_all! }
     zk.close
   end
 
@@ -188,8 +188,10 @@ class Poseidon::ConsumerGroup
   # @param [Integer] offset
   def commit(partition, offset)
     zk.set(offset_path(partition), offset.to_s)
+    unlock(offset)
   rescue ZK::Exceptions::NoNode
     zk.create(offset_path(partition), offset.to_s, {:ignore => :node_exists})
+    unlock(offset)
   end
 
   # Sorted partitions by broker address (so partitions on the same broker are clustered together)
@@ -228,20 +230,21 @@ class Poseidon::ConsumerGroup
   #
   # @api public
   def checkout(opts = {})
-    consumer = nil
-    commit   = @mutex.synchronize do
-      consumer = @consumers.shift
-      return false unless consumer
+    lock
 
-      @consumers.push consumer
-      yield consumer
-    end
+    @current_consumer = @consumers.shift
+    return false unless @current_consumer
+
+    @consumers.push @current_consumer
+    commit =  yield @current_consumer
 
     unless opts[:commit] == false || commit == false
-      commit consumer.partition, consumer.offset
+      commit @current_consumer.partition, @current_consumer.offset
     end
 
     true
+  rescue StandardError
+    unlock(@current_consumer.offset)
   end
 
   # Convenience method to fetch messages from the broker.
@@ -368,7 +371,7 @@ class Poseidon::ConsumerGroup
     # * let POS be our index position in CG and let N = size(PT)/size(CG)
     # * assign partitions from POS*N to (POS+1)*N-1
     def rebalance!
-      @mutex.synchronize do
+      synchronize do
         release_all!
         reload_metadata
 
@@ -396,11 +399,24 @@ class Poseidon::ConsumerGroup
 
   private
 
+    def lock
+      @mutex.lock
+    end
+
+    def unlock(offset)
+      raise "Mutex should be locked, possibly committing out of order" unless  @mutex.locked?
+      @mutex.unlock if @current_consumer.offset == offset
+    end
+
+    def synchronize
+      @mutex.synchronize { yield }
+    end
+
     # Claim the ownership of the partition for this consumer
     # @raise [Timeout::Error]
     def claim!(partition)
       sleep_duration = 0.1
-      num_tries = ((options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT)/sleep_duration).floor.to_i
+      num_tries = ((options[:claim_timeout] || DEFAULT_CLAIM_TIMEOUT)/sleep_duration).floor.to_i
       created = nil
 
       num_tries.times do
