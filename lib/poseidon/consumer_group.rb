@@ -242,7 +242,7 @@ class Poseidon::ConsumerGroup
     end
     true
   rescue StandardError
-    unlock(@current_consumer.offset)
+    unlock
   end
 
   # Convenience method to fetch messages from the broker.
@@ -405,9 +405,14 @@ class Poseidon::ConsumerGroup
       @mutex.lock
     end
 
-    def unlock(offset)
+    def unlock(offset=nil)
       raise "Mutex should be locked, possibly committing out of order" unless  @mutex.locked?
-      @mutex.unlock if @current_consumer.offset == offset
+
+      if offset
+        @mutex.unlock if @current_consumer.offset == offset
+      else
+        @mutex.unlock
+      end
     end
 
     def synchronize
