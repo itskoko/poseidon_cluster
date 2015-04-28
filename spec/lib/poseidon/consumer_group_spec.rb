@@ -29,7 +29,10 @@ describe Poseidon::ConsumerGroup do
   end
 
   let :zk_client do
-    double "ZK", mkdir_p: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil, children: ["my-group-UNIQUEID"], close: nil
+    double "ZK", mkdir_p: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil,  close: nil
+  end
+  before do
+    allow(zk_client).to receive(:children).and_return(nil, ["my-group-UNIQUEID"])
   end
 
   let(:group) { described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic" }
