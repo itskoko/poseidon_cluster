@@ -232,7 +232,11 @@ class Poseidon::ConsumerGroup
     lock
 
     @current_consumer = @consumers.shift
-    return false unless @current_consumer
+
+    if @current_consumer.nil?
+      unlock
+      return false
+    end
 
     @consumers.push @current_consumer
     commit =  yield @current_consumer
@@ -241,8 +245,9 @@ class Poseidon::ConsumerGroup
       commit @current_consumer.partition, @current_consumer.offset
     end
     true
-  rescue StandardError
+  rescue StandardError => e
     unlock
+    raise e
   end
 
   # Convenience method to fetch messages from the broker.
@@ -267,7 +272,15 @@ class Poseidon::ConsumerGroup
   # @api public
   def fetch(opts = {})
     checkout(opts) do |consumer|
-      yield consumer.partition, consumer.fetch
+      payloads = consumer.fetch
+      unless payloads.empty?
+        yield consumer.partition, payloads
+      else
+        if opts[:commit] == false
+          commit consumer.partition, consumer.offset
+        end
+        true
+      end
     end
   end
 
