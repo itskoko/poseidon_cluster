@@ -3,5 +3,6 @@ rvm:
   - 2.0.0
   - 2.1.5
 script: bundle exec rake spec:coveralls scenario
+install: bundle install
 matrix:
   fast_finish: true
