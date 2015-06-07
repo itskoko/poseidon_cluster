@@ -7,3 +7,4 @@ pkg/
 coverage/
 *.log
 .ruby-version
+Gemfile.lock
