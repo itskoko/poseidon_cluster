@@ -105,6 +105,7 @@ class Poseidon::ConsumerGroup
     @consumers  = []
     @pool       = ::Poseidon::BrokerPool.new(id, brokers, options[:socket_timeout_ms])
     @mutex      = Mutex.new
+    @claim_timeout = options.delete(:claim_timeout) || DEFAULT_CLAIM_TIMEOUT
 
     register! unless options[:register] == false
   end
@@ -436,7 +437,7 @@ class Poseidon::ConsumerGroup
     # @raise [Timeout::Error]
     def claim!(partition)
       path = claim_path(partition)
-      Timeout.timeout options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT do
+      Timeout.timeout @claim_timeout do
         while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
           return if @pending
           sleep(0.1)
